@@ -105,3 +105,103 @@ I attempted to create persistent DigitalOcean GenAI agents for the two models. T
 - Valid model UUIDs
 
 Because the selected models are available as serverless inference models, the working test path is to call the shared Serverless Inference endpoint with the model IDs above.
+
+## Useful cURL Commands
+
+List the models available to the configured model access key:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $DO_MODEL_ACCESS_KEY" \
+  https://inference.do-ai.run/v1/models \
+  | jq -r '.data[]?.id'
+```
+
+Call the primary model directly:
+
+```bash
+curl -sS -X POST https://inference.do-ai.run/v1/chat/completions \
+  -H "Authorization: Bearer $DO_MODEL_ACCESS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "llama3.3-70b-instruct",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Return only JSON: {\"answer\":\"hello\",\"score\":1}"
+      }
+    ],
+    "temperature": 0
+  }' | jq
+```
+
+Call the candidate model directly:
+
+```bash
+curl -sS -X POST https://inference.do-ai.run/v1/chat/completions \
+  -H "Authorization: Bearer $DO_MODEL_ACCESS_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "openai-gpt-oss-20b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Return only JSON: {\"answer\":\"hello\",\"score\":1}"
+      }
+    ],
+    "temperature": 0
+  }' | jq
+```
+
+Find the managed MySQL and Kafka cluster IDs:
+
+```bash
+export DIGITALOCEAN_TOKEN="$(doctl auth token)"
+
+curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  https://api.digitalocean.com/v2/databases \
+  | jq -r '.databases[] | select(.name=="llm-shadow-mysql" or .name=="llm-shadow-kafka") | [.name, .id, .region] | @tsv'
+```
+
+Fetch managed MySQL connection details without printing passwords:
+
+```bash
+MYSQL_ID="$(curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  https://api.digitalocean.com/v2/databases \
+  | jq -r '.databases[] | select(.name=="llm-shadow-mysql") | .id')"
+
+curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  "https://api.digitalocean.com/v2/databases/$MYSQL_ID" \
+  | jq '{host: .database.connection.host, port: .database.connection.port, user: .database.connection.user, ssl: .database.connection.ssl}'
+```
+
+Fetch managed Kafka connection details without printing passwords:
+
+```bash
+KAFKA_ID="$(curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  https://api.digitalocean.com/v2/databases \
+  | jq -r '.databases[] | select(.name=="llm-shadow-kafka") | .id')"
+
+curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  "https://api.digitalocean.com/v2/databases/$KAFKA_ID" \
+  | jq '{host: .database.connection.host, port: .database.connection.port, ssl: .database.connection.ssl, application_ports: .database.connection.application_ports}'
+```
+
+List Kafka users:
+
+```bash
+curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  "https://api.digitalocean.com/v2/databases/$KAFKA_ID/users" \
+  | jq '.users'
+```
+
+Fetch the Kafka CA certificate and set the GitHub secret used by the deployment workflow:
+
+```bash
+curl -fsS -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  "https://api.digitalocean.com/v2/databases/$KAFKA_ID/ca" \
+  | jq -r '.certificate' > /tmp/do-kafka-ca.crt
+
+base64 -i /tmp/do-kafka-ca.crt | gh secret set DO_KAFKA_CA_CERT_B64
+gh secret set DO_KAFKA_TRUSTSTORE_PASSWORD --body "changeit"
+```

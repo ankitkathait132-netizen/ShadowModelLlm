@@ -225,3 +225,100 @@ consumer that runs continuously in the background:
 All steps emit structured JSON log events (`shadow.task.received`, `shadow.candidate.failed`,
 `shadow.match`, `shadow.mismatch`, `shadow.comparison.persisted`, `shadow.retry.scheduled`,
 `shadow.dlq.published`, etc.) via the shared `StructuredLogger`.
+
+## DigitalOcean Deployment Test Commands
+
+Use the deployed proxy API on the droplet:
+
+```bash
+curl -sS http://167.71.226.194:8080/health | jq
+```
+
+Send an end-to-end shadow request:
+
+```bash
+curl -sS -X POST http://167.71.226.194:8080/v1/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "correlationId": "do-prod-test-001",
+    "payload": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Return only JSON: {\"answer\":\"hello\",\"score\":1}"
+        }
+      ],
+      "temperature": 0
+    }
+  }' | jq
+```
+
+Check service logs on the droplet:
+
+```bash
+ssh -i ~/.ssh/id_ed25519_shadowmodellm root@167.71.226.194
+journalctl -u shadow-proxy-api -n 120 --no-pager --full
+journalctl -u shadow-worker -n 120 --no-pager --full
+```
+
+Check service status:
+
+```bash
+systemctl status shadow-proxy-api --no-pager
+systemctl status shadow-worker --no-pager
+```
+
+Verify the deployed env file has all required keys without printing secrets:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+
+for key in [
+    "SPRING_PROFILES_ACTIVE",
+    "DO_MYSQL_JDBC_URL",
+    "DO_MYSQL_USERNAME",
+    "DO_MYSQL_PASSWORD",
+    "DO_KAFKA_BOOTSTRAP_SERVERS",
+    "DO_KAFKA_USERNAME",
+    "DO_KAFKA_PASSWORD",
+    "DO_KAFKA_TRUSTSTORE_LOCATION",
+    "DO_KAFKA_TRUSTSTORE_PASSWORD",
+    "DO_MODEL_ACCESS_KEY",
+    "MACHINE_ID",
+]:
+    value = ""
+    for line in Path("/etc/shadowmode.env").read_text().splitlines():
+        if line.startswith(key + "="):
+            value = line.split("=", 1)[1].strip()
+    print(f"{key}: {'SET' if value else 'EMPTY'}")
+PY
+```
+
+Inspect persisted comparison rows in managed MySQL from your Mac after sourcing prod env values:
+
+```bash
+source .env.prod.local
+
+MYSQL_HOST="$(python3 - <<'PY'
+import os, re
+m = re.search(r'jdbc:mysql://([^:/?]+)', os.environ["DO_MYSQL_JDBC_URL"])
+print(m.group(1))
+PY
+)"
+
+MYSQL_PORT="$(python3 - <<'PY'
+import os, re
+m = re.search(r'jdbc:mysql://[^:/?]+:(\d+)', os.environ["DO_MYSQL_JDBC_URL"])
+print(m.group(1) if m else "25060")
+PY
+)"
+
+mysql --ssl-mode=REQUIRED \
+  -h "$MYSQL_HOST" \
+  -P "$MYSQL_PORT" \
+  -u "$DO_MYSQL_USERNAME" \
+  -p"$DO_MYSQL_PASSWORD" \
+  llm_shadow \
+  -e "SELECT id, correlation_id, match_status, primary_model, candidate_model, diff_summary, created_at FROM llm_shadow_mismatch ORDER BY created_at DESC LIMIT 20;"
+```
