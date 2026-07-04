@@ -38,6 +38,10 @@ public class LlmShadowMismatchEntity {
     @Column(name = "candidate_model")
     private String candidateModel;
 
+    /** {@code MATCH} when primary/candidate outputs were identical, {@code MISMATCH} otherwise. */
+    @Column(name = "match_status", nullable = false)
+    private String matchStatus;
+
     @Column(name = "primary_status")
     private Integer primaryStatus;
 
@@ -129,6 +133,14 @@ public class LlmShadowMismatchEntity {
 
     public void setCandidateModel(String candidateModel) {
         this.candidateModel = candidateModel;
+    }
+
+    public String getMatchStatus() {
+        return matchStatus;
+    }
+
+    public void setMatchStatus(String matchStatus) {
+        this.matchStatus = matchStatus;
     }
 
     public Integer getPrimaryStatus() {

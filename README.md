@@ -212,12 +212,16 @@ consumer that runs continuously in the background:
 3. Extracts JSON from both the primary and candidate raw outputs (`JsonExtractor`) and
    compares them (`ResponseComparator`), falling back to normalized text comparison if
    JSON extraction fails on either side.
-4. On mismatch, persists a row to the `llm_shadow_mismatch` table (idempotent on
-   `shadowTaskId`, so redelivered messages are skipped rather than duplicated).
+4. Persists a row to the `llm_shadow_mismatch` table for **every** comparison result —
+   both matches and mismatches — with `match_status` set to `MATCH` or `MISMATCH`
+   (idempotent on `shadowTaskId`, so redelivered messages are skipped rather than
+   duplicated). A `MATCH` row records `diff_summary = "100% match"`; a `MISMATCH` row
+   records the actual diff. Every row includes `correlation_id` and the request text
+   (`request_payload_redacted`, truncated to `app.redaction.max-persisted-payload-size`).
 5. On failure (candidate call error or DB write error), retries with exponential
    backoff + jitter up to `app.retry.max-attempts`, then publishes to
    `llm-shadow-requests-dlq` once attempts are exhausted.
 
 All steps emit structured JSON log events (`shadow.task.received`, `shadow.candidate.failed`,
-`shadow.match`, `shadow.mismatch.persisted`, `shadow.retry.scheduled`, `shadow.dlq.published`, etc.)
-via the shared `StructuredLogger`.
+`shadow.match`, `shadow.mismatch`, `shadow.comparison.persisted`, `shadow.retry.scheduled`,
+`shadow.dlq.published`, etc.) via the shared `StructuredLogger`.

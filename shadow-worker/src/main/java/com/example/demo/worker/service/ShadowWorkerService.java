@@ -18,14 +18,18 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 
 /**
- * Consumes a shadow task: calls the candidate LLM, extracts + compares JSON
- * against the primary output, and persists a mismatch row only when they differ.
+ * Consumes a shadow task: calls the candidate LLM, extracts + compares JSON against
+ * the primary output, and persists a row for every comparison result (match or
+ * mismatch) to {@code llm_shadow_mismatch}, distinguished by {@code match_status}.
  * Idempotent on {@code shadowTaskId} to tolerate Kafka redelivery.
  */
 @Service
 public class ShadowWorkerService {
 
     private static final String COMPONENT = "shadow-worker";
+    private static final String MATCH_STATUS_MATCH = "MATCH";
+    private static final String MATCH_STATUS_MISMATCH = "MISMATCH";
+    private static final String MATCH_DIFF_SUMMARY = "100% match";
 
     private final CandidateLlmClient candidateLlmClient;
     private final JsonExtractor jsonExtractor;
@@ -62,7 +66,7 @@ public class ShadowWorkerService {
                     .correlationId(task.getCorrelationId())
                     .shadowTaskId(task.getShadowTaskId())
                     .status("skipped")
-                    .message("Mismatch already persisted for this shadow task; skipping duplicate delivery")
+                    .message("Comparison result already persisted for this shadow task; skipping duplicate delivery")
                     .build());
             return;
         }
@@ -114,23 +118,20 @@ public class ShadowWorkerService {
 
         ComparisonResult comparisonResult = responseComparator.compare(primaryExtraction, candidateExtraction);
 
-        if (comparisonResult.isMatched()) {
-            structuredLogger.log(LogEvent.builder("shadow.match")
-                    .component(COMPONENT)
-                    .operation("compare")
-                    .correlationId(task.getCorrelationId())
-                    .shadowTaskId(task.getShadowTaskId())
-                    .status("matched")
-                    .build());
-            return;
-        }
+        structuredLogger.log(LogEvent.builder(comparisonResult.isMatched() ? "shadow.match" : "shadow.mismatch")
+                .component(COMPONENT)
+                .operation("compare")
+                .correlationId(task.getCorrelationId())
+                .shadowTaskId(task.getShadowTaskId())
+                .status(comparisonResult.isMatched() ? "matched" : "mismatched")
+                .build());
 
-        persistMismatch(task, candidateResult, comparisonResult, primaryExtraction, candidateExtraction);
+        persistComparisonResult(task, candidateResult, comparisonResult, primaryExtraction, candidateExtraction);
     }
 
-    private void persistMismatch(ShadowTaskDto task, CandidateLlmResult candidateResult,
-                                  ComparisonResult comparisonResult, JsonExtractionResult primaryExtraction,
-                                  JsonExtractionResult candidateExtraction) {
+    private void persistComparisonResult(ShadowTaskDto task, CandidateLlmResult candidateResult,
+                                          ComparisonResult comparisonResult, JsonExtractionResult primaryExtraction,
+                                          JsonExtractionResult candidateExtraction) {
         LlmShadowMismatchEntity entity = new LlmShadowMismatchEntity();
         entity.setShadowTaskId(task.getShadowTaskId());
         entity.setCorrelationId(task.getCorrelationId());
@@ -138,6 +139,7 @@ public class ShadowWorkerService {
         entity.setRequestPayloadRedacted(task.getRequestPayloadRedacted());
         entity.setPrimaryModel(task.getPrimaryModel());
         entity.setCandidateModel(task.getCandidateModel());
+        entity.setMatchStatus(comparisonResult.isMatched() ? MATCH_STATUS_MATCH : MATCH_STATUS_MISMATCH);
         entity.setPrimaryStatus(task.getPrimaryStatusCode());
         entity.setCandidateStatus(candidateResult.getStatusCode());
         entity.setPrimaryLatencyMs(task.getPrimaryLatencyMs());
@@ -146,32 +148,32 @@ public class ShadowWorkerService {
         entity.setCandidateRawOutput(candidateResult.getResponseBody());
         entity.setPrimaryJsonOutput(primaryExtraction.isSuccess() ? primaryExtraction.getParsedJson().toString() : null);
         entity.setCandidateJsonOutput(candidateExtraction.isSuccess() ? candidateExtraction.getParsedJson().toString() : null);
-        entity.setDiffSummary(comparisonResult.getDiffSummary());
+        entity.setDiffSummary(comparisonResult.isMatched() ? MATCH_DIFF_SUMMARY : comparisonResult.getDiffSummary());
         entity.setErrorType(!primaryExtraction.isSuccess() || !candidateExtraction.isSuccess()
                 ? "JSON_EXTRACTION_DEGRADED" : null);
         entity.setCreatedAt(Instant.now());
 
         try {
             mismatchRepository.save(entity);
-            structuredLogger.log(LogEvent.builder("shadow.mismatch.persisted")
+            structuredLogger.log(LogEvent.builder("shadow.comparison.persisted")
                     .component(COMPONENT)
                     .operation("db_write")
                     .correlationId(task.getCorrelationId())
                     .shadowTaskId(task.getShadowTaskId())
                     .status("success")
-                    .message(comparisonResult.getDiffSummary())
+                    .message(entity.getDiffSummary())
                     .build());
         } catch (DataIntegrityViolationException duplicate) {
-            structuredLogger.log(LogEvent.builder("shadow.mismatch.duplicate")
+            structuredLogger.log(LogEvent.builder("shadow.comparison.duplicate")
                     .component(COMPONENT)
                     .operation("db_write")
                     .correlationId(task.getCorrelationId())
                     .shadowTaskId(task.getShadowTaskId())
                     .status("skipped")
-                    .message("Mismatch row already exists for this shadow task id")
+                    .message("Comparison row already exists for this shadow task id")
                     .build());
         } catch (Exception e) {
-            structuredLogger.log(LogEvent.builder("shadow.mismatch.persist_failed")
+            structuredLogger.log(LogEvent.builder("shadow.comparison.persist_failed")
                     .component(COMPONENT)
                     .operation("db_write")
                     .correlationId(task.getCorrelationId())
