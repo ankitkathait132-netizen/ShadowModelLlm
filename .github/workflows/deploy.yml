@@ -18,6 +18,31 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             set -e
+            require_secret() {
+              name="$1"
+              value="$2"
+              if [ -z "$value" ]; then
+                echo "Missing required GitHub Actions secret: $name" >&2
+                exit 1
+              fi
+            }
+
+            require_secret DO_MYSQL_JDBC_URL '${{ secrets.DO_MYSQL_JDBC_URL }}'
+            require_secret DO_MYSQL_USERNAME '${{ secrets.DO_MYSQL_USERNAME }}'
+            require_secret DO_MYSQL_PASSWORD '${{ secrets.DO_MYSQL_PASSWORD }}'
+            require_secret DO_KAFKA_BOOTSTRAP_SERVERS '${{ secrets.DO_KAFKA_BOOTSTRAP_SERVERS }}'
+            require_secret DO_KAFKA_USERNAME '${{ secrets.DO_KAFKA_USERNAME }}'
+            require_secret DO_KAFKA_PASSWORD '${{ secrets.DO_KAFKA_PASSWORD }}'
+            require_secret DO_KAFKA_CA_CERT_B64 '${{ secrets.DO_KAFKA_CA_CERT_B64 }}'
+            require_secret DO_KAFKA_TRUSTSTORE_PASSWORD '${{ secrets.DO_KAFKA_TRUSTSTORE_PASSWORD }}'
+            require_secret DO_MODEL_ACCESS_KEY '${{ secrets.DO_MODEL_ACCESS_KEY }}'
+            require_secret MACHINE_ID '${{ secrets.MACHINE_ID }}'
+
+            if [ "$(printf '%s' '${{ secrets.DO_KAFKA_TRUSTSTORE_PASSWORD }}' | wc -c)" -lt 6 ]; then
+              echo "DO_KAFKA_TRUSTSTORE_PASSWORD must be at least 6 characters." >&2
+              exit 1
+            fi
+
             if ! command -v git >/dev/null 2>&1; then
               apt-get update
               apt-get install -y git
