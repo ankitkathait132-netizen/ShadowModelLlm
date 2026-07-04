@@ -3,7 +3,7 @@ name: Deploy to DigitalOcean Droplet
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   deploy:
@@ -42,7 +42,7 @@ jobs:
               mkdir -p /opt/shadowmode/bootstrap
               cd /opt/shadowmode/bootstrap
               rm -rf ShadowModelLlm
-              git clone --depth 1 --branch master https://github.com/ankitkathait132-netizen/ShadowModelLlm.git
+              git clone --depth 1 --branch main https://github.com/ankitkathait132-netizen/ShadowModelLlm.git
               cd ShadowModelLlm
               chmod +x deploy/bootstrap-droplet.sh deploy/deploy.sh
               ./deploy/bootstrap-droplet.sh
