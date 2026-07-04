@@ -226,6 +226,40 @@ All steps emit structured JSON log events (`shadow.task.received`, `shadow.candi
 `shadow.match`, `shadow.mismatch`, `shadow.comparison.persisted`, `shadow.retry.scheduled`,
 `shadow.dlq.published`, etc.) via the shared `StructuredLogger`.
 
+## Testing
+
+Every module has a JUnit 5 test suite (using the `spring-boot-starter-test` BOM:
+JUnit 5, Mockito, AssertJ). Run everything from the repo root:
+
+```bash
+./mvnw test
+```
+
+Or with the bundled JDK:
+
+```bash
+./run.sh test
+```
+
+Run a single module's tests:
+
+```bash
+./run.sh -pl common test
+./run.sh -pl proxy-api -am test
+./run.sh -pl shadow-worker -am test
+```
+
+(`-am` also builds/tests the `common` module the other two depend on.)
+
+| Module          | What's covered                                                                                                                                                                                        |
+|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `common`        | `RequestHasher` (SHA-256), `BackoffCalculator` (exponential backoff + cap + jitter bounds), `JsonExtractor` (full/embedded/malformed/missing JSON), `ResponseComparator` (JSON vs. text fallback matching), `ChatCompletionRequest`, `LogEvent`, `StructuredLogger` (JSON log shape + level via a Logback `ListAppender`), `MachineIdResolver`, `ShadowProxyProperties` defaults, and `HealthService` (MySQL/Kafka reachable and unreachable paths, with `AdminClient` statically mocked via Mockito's inline mock maker so no real broker is needed). |
+| `proxy-api`     | `ProxyRequestDto` strict deserialization (rejects `primaryModel`/`candidateModel`/`payload`), `ProxyService` (validation, correlation ID generation, model selection from properties only, shadow task construction, truncation, shadow-disabled path), `PrimaryLlmClient` (real HTTP round-trips against a JDK `HttpServer` — success, auth header, 4xx, connection refused), `ShadowTaskProducer` (Kafka publish + success/failure logging), `ProxyController`. |
+| `shadow-worker` | `CandidateLlmClient` (same HTTP-server-backed approach as `PrimaryLlmClient`), `RetryDlqPublisher` (retry vs. DLQ routing, attempt increment), `ShadowWorkerService` (duplicate skip, candidate failure → retry/DLQ, match/mismatch persistence incl. the `"100% match"` diff summary, JSON-extraction-degraded error type, duplicate-key vs. generic save failures), `ShadowTaskConsumer`, and `LlmShadowMismatchRepository` against a real embedded H2 database (`src/test/resources/application.yml`, `MODE=MySQL` so the `LONGTEXT` column definitions apply) verifying persistence, `existsByShadowTaskId`, and the unique constraint on `shadow_task_id`. |
+
+All three modules pass with `mvn clean test` at the repo root (95 tests total as of
+this writing: 50 in `common`, 25 in `proxy-api`, 20 in `shadow-worker`).
+
 ## DigitalOcean Deployment Test Commands
 
 Use the deployed proxy API on the droplet:
