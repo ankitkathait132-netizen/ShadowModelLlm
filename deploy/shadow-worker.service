@@ -1,0 +1,14 @@
+[Unit]
+Description=ShadowMode Worker
+After=network.target
+
+[Service]
+User=shadowmode
+WorkingDirectory=/opt/shadowmode/app
+EnvironmentFile=/etc/shadowmode.env
+ExecStart=/usr/bin/java -jar /opt/shadowmode/app/shadow-worker/target/shadow-worker.jar --spring.profiles.active=prod
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

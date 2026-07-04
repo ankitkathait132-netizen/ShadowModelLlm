@@ -9,6 +9,7 @@ public class ShadowTaskDto {
 
     private String shadowTaskId;
     private String correlationId;
+    private String requestText;
     private String requestPayloadRedacted;
     private String requestHash;
     private String primaryResponsePayload;
@@ -45,6 +46,22 @@ public class ShadowTaskDto {
         this.correlationId = correlationId;
     }
 
+    /**
+     * Full, untruncated user text. Used by shadow-worker to actually call the candidate
+     * LLM. Not persisted to the database directly (see {@link #getRequestPayloadRedacted()}).
+     */
+    public String getRequestText() {
+        return requestText;
+    }
+
+    public void setRequestText(String requestText) {
+        this.requestText = requestText;
+    }
+
+    /**
+     * Truncated copy of {@link #getRequestText()} used only when persisting the mismatch
+     * row to MySQL, so oversized prompts don't bloat the database.
+     */
     public String getRequestPayloadRedacted() {
         return requestPayloadRedacted;
     }
@@ -151,6 +168,11 @@ public class ShadowTaskDto {
 
         public Builder correlationId(String correlationId) {
             instance.setCorrelationId(correlationId);
+            return this;
+        }
+
+        public Builder requestText(String requestText) {
+            instance.setRequestText(requestText);
             return this;
         }
 

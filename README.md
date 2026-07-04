@@ -136,30 +136,57 @@ Owned by `proxy-api`. Calls the configured primary LLM synchronously, publishes 
 shadow task to Kafka in the background (unless `app.shadow.enabled=false`), and
 returns the primary response immediately.
 
+The caller supplies **plain text only** — no raw JSON payload, no model name. The
+proxy builds the actual OpenAI-compatible chat completion body server-side:
+
+```json
+{"model": "<configured-model>", "messages": [{"role": "user", "content": "<text>"}]}
+```
+
+This keeps two things entirely out of the caller's control:
+
+- **Which model handles the request** — always `app.primary-llm.default-model` /
+  `app.candidate-llm.default-model` from server config, never client input. Otherwise
+  a caller could route around approved models or cost controls.
+- **The shape of the upstream request body** — a caller can't inject extra fields,
+  a system prompt, or arbitrary JSON into what's sent to the LLM provider.
+
+wThis is enforced, not just undocumented: `ProxyRequestDto` only declares `correlationId`
+and `text`, and `proxy-api` sets `spring.jackson.deserialization.fail-on-unknown-properties=true`,
+so a request body containing e.g. `"primaryModel"`, `"candidateModel"`, or `"payload"` is
+rejected with `400 Bad Request` instead of the field being silently ignored.
+
 **Request body:**
 
 ```json
 {
   "correlationId": "req-123",
-  "payload": { "prompt": "hello" },
-  "primaryModel": "gpt-primary",
-  "candidateModel": "gpt-candidate"
+  "text": "What is the capital of France?"
 }
 ```
 
 | Field            | Type     | Required | Description                                              |
 |------------------|----------|----------|------------------------------------------------------------|
 | `correlationId`  | `string` | No       | Client-supplied correlation ID; generated if omitted        |
-| `payload`        | `object` | Yes      | Request body forwarded as-is to the primary LLM              |
-| `primaryModel`   | `string` | No       | Overrides `app.primary-llm.default-model`                    |
-| `candidateModel` | `string` | No       | Overrides `app.candidate-llm.default-model`                  |
+| `text`           | `string` | Yes      | Plain prompt text; rejected with `400` if blank/missing       |
+
+The same `text` is sent to both the primary LLM (synchronously) and the candidate LLM
+(asynchronously, via the shadow task) — each wrapped with its own server-configured
+model — so the two responses are directly comparable.
 
 **Response:** `200 OK`
+
+`primaryResponse` is the raw, unmodified response body from the primary LLM (an
+OpenAI-compatible chat completion response):
 
 ```json
 {
   "correlationId": "req-123",
-  "primaryResponse": { "text": "hi there" },
+  "primaryResponse": {
+    "choices": [
+      { "message": { "role": "assistant", "content": "Paris." } }
+    ]
+  },
   "primaryStatusCode": 200,
   "primaryLatencyMs": 42,
   "shadowEnqueued": true
@@ -168,8 +195,12 @@ returns the primary response immediately.
 
 Note: the primary/candidate LLM base URLs in `application.yml` currently point to
 local placeholder addresses (`http://localhost:9090/primary`,
-`http://localhost:9091/candidate`). Point them at real endpoints, or stand up mock
-servers, before exercising this endpoint end-to-end.
+`http://localhost:9091/candidate`), which won't understand the OpenAI-compatible
+request shape. Point `app.primary-llm.base-url` / `app.candidate-llm.base-url` at
+real OpenAI-compatible endpoints (see
+[`DIGITALOCEAN_TEST_LLM_MODELS.md`](./DIGITALOCEAN_TEST_LLM_MODELS.md) for a working
+DigitalOcean Serverless Inference setup), or stand up mock servers that accept
+`{"model", "messages"}` bodies, before exercising this endpoint end-to-end.
 
 ### shadow-worker (background, no HTTP API)
 

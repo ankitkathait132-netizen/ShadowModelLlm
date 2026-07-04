@@ -67,7 +67,7 @@ public class ShadowWorkerService {
             return;
         }
 
-        CandidateLlmResult candidateResult = candidateLlmClient.call(task.getRequestPayloadRedacted());
+        CandidateLlmResult candidateResult = candidateLlmClient.call(task.getRequestText());
 
         if (!candidateResult.isSuccess()) {
             structuredLogger.log(LogEvent.builder("shadow.candidate.failed")

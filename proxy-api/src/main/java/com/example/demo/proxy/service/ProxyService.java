@@ -14,7 +14,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.TextNode;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -46,6 +48,10 @@ public class ProxyService {
     }
 
     public ProxyResponseDto handleProxyRequest(ProxyRequestDto request) {
+        if (request.getText() == null || request.getText().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "text is required");
+        }
+
         String correlationId = firstNonBlank(request.getCorrelationId(), UUID.randomUUID().toString());
 
         structuredLogger.log(LogEvent.builder("proxy.request.received")
@@ -55,10 +61,10 @@ public class ProxyService {
                 .status("received")
                 .build());
 
-        String primaryModel = firstNonBlank(request.getPrimaryModel(), properties.getPrimaryLlm().getDefaultModel());
-        String candidateModel = firstNonBlank(request.getCandidateModel(), properties.getCandidateLlm().getDefaultModel());
+        String primaryModel = properties.getPrimaryLlm().getDefaultModel();
+        String candidateModel = properties.getCandidateLlm().getDefaultModel();
 
-        PrimaryLlmResult primaryResult = primaryLlmClient.call(request.getPayload());
+        PrimaryLlmResult primaryResult = primaryLlmClient.call(request.getText());
 
         structuredLogger.log(LogEvent.builder("proxy.primary.completed")
                 .component(COMPONENT)
@@ -89,13 +95,14 @@ public class ProxyService {
 
     private ShadowTaskDto buildShadowTask(ProxyRequestDto request, String correlationId,
                                            PrimaryLlmResult primaryResult, String primaryModel, String candidateModel) {
-        String requestPayloadJson = writeAsJson(request.getPayload());
-        String requestHash = RequestHasher.sha256Hex(requestPayloadJson);
+        String requestText = request.getText();
+        String requestHash = RequestHasher.sha256Hex(requestText);
 
         return ShadowTaskDto.builder()
                 .shadowTaskId(UUID.randomUUID().toString())
                 .correlationId(correlationId)
-                .requestPayloadRedacted(truncateForPersistence(requestPayloadJson))
+                .requestText(requestText)
+                .requestPayloadRedacted(truncateForPersistence(requestText))
                 .requestHash(requestHash)
                 .primaryResponsePayload(truncateForPersistence(primaryResult.getResponseBody()))
                 .primaryStatusCode(primaryResult.getStatusCode())
@@ -124,17 +131,6 @@ public class ProxyService {
             return objectMapper.readTree(responseBody);
         } catch (JsonProcessingException notJson) {
             return new TextNode(responseBody);
-        }
-    }
-
-    private String writeAsJson(Object payload) {
-        if (payload == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(payload);
-        } catch (JsonProcessingException e) {
-            return String.valueOf(payload);
         }
     }
 

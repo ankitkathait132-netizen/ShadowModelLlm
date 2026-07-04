@@ -1,6 +1,12 @@
 spring:
   application:
     name: llm-shadow-proxy
+  jackson:
+    deserialization:
+      # Reject request bodies containing fields we don't define (e.g. a caller trying to
+      # send "primaryModel"/"candidateModel"/"payload") instead of Jackson's default of
+      # silently dropping them. Model selection must only ever come from server config.
+      fail-on-unknown-properties: true
   jpa:
     hibernate:
       ddl-auto: update

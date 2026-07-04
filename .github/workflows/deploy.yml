@@ -1,0 +1,52 @@
+name: Deploy to DigitalOcean Droplet
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            if ! command -v git >/dev/null 2>&1; then
+              apt-get update
+              apt-get install -y git
+            fi
+
+            cat > /etc/shadowmode.env <<'EOF'
+            SPRING_PROFILES_ACTIVE=prod
+            DO_MYSQL_JDBC_URL=${{ secrets.DO_MYSQL_JDBC_URL }}
+            DO_MYSQL_USERNAME=${{ secrets.DO_MYSQL_USERNAME }}
+            DO_MYSQL_PASSWORD=${{ secrets.DO_MYSQL_PASSWORD }}
+
+            DO_KAFKA_BOOTSTRAP_SERVERS=${{ secrets.DO_KAFKA_BOOTSTRAP_SERVERS }}
+            DO_KAFKA_USERNAME=${{ secrets.DO_KAFKA_USERNAME }}
+            DO_KAFKA_PASSWORD=${{ secrets.DO_KAFKA_PASSWORD }}
+
+            DO_MODEL_ACCESS_KEY=${{ secrets.DO_MODEL_ACCESS_KEY }}
+            MACHINE_ID=${{ secrets.MACHINE_ID }}
+            EOF
+            chmod 600 /etc/shadowmode.env
+
+            if [ ! -d /opt/shadowmode/app/.git ]; then
+              mkdir -p /opt/shadowmode/bootstrap
+              cd /opt/shadowmode/bootstrap
+              rm -rf ShadowModelLlm
+              git clone --depth 1 --branch master https://github.com/ankitkathait132-netizen/ShadowModelLlm.git
+              cd ShadowModelLlm
+              chmod +x deploy/bootstrap-droplet.sh deploy/deploy.sh
+              ./deploy/bootstrap-droplet.sh
+            fi
+            cd /opt/shadowmode/app 2>/dev/null || cd /opt/shadowmode/bootstrap/ShadowModelLlm
+            chmod +x deploy/deploy.sh
+            ./deploy/deploy.sh
