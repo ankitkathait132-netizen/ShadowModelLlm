@@ -5,7 +5,7 @@ APP_USER="${APP_USER:-shadowmode}"
 APP_HOME="${APP_HOME:-/opt/shadowmode}"
 APP_DIR="${APP_DIR:-${APP_HOME}/app}"
 REPO_URL="${REPO_URL:-https://github.com/ankitkathait132-netizen/ShadowModelLlm.git}"
-BRANCH="${BRANCH:-master}"
+BRANCH="${BRANCH:-main}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run this script as root on the droplet." >&2
