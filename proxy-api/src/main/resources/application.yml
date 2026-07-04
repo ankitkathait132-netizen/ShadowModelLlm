@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: llm-shadow-proxy
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: 8080
+
+app:
+  service-name: llm-shadow-proxy
+  machine-id-env-var: MACHINE_ID
+  shadow:
+    enabled: true
+    comparison-mode: NORMALIZED_JSON
+  primary-llm:
+    base-url: http://localhost:9090/primary
+    auth-token: ""
+    default-model: primary-model
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+  candidate-llm:
+    base-url: http://localhost:9091/candidate
+    auth-token: ""
+    default-model: candidate-model
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+  kafka:
+    topics:
+      shadow-requests: llm-shadow-requests
+      shadow-retry: llm-shadow-requests-retry
+      shadow-dlq: llm-shadow-requests-dlq
+  retry:
+    max-attempts: 5
+    initial-backoff-ms: 500
+    backoff-multiplier: 2.0
+    max-backoff-ms: 30000
+    jitter-enabled: true
+  redaction:
+    max-persisted-payload-size: 10000
+    fields:
+      - authorization
+      - api_key
+      - token
