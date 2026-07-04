@@ -32,6 +32,8 @@ jobs:
             DO_KAFKA_BOOTSTRAP_SERVERS=${{ secrets.DO_KAFKA_BOOTSTRAP_SERVERS }}
             DO_KAFKA_USERNAME=${{ secrets.DO_KAFKA_USERNAME }}
             DO_KAFKA_PASSWORD=${{ secrets.DO_KAFKA_PASSWORD }}
+            DO_KAFKA_TRUSTSTORE_LOCATION=/etc/shadowmode/kafka.truststore.jks
+            DO_KAFKA_TRUSTSTORE_PASSWORD=${{ secrets.DO_KAFKA_TRUSTSTORE_PASSWORD }}
 
             DO_MODEL_ACCESS_KEY=${{ secrets.DO_MODEL_ACCESS_KEY }}
             MACHINE_ID=${{ secrets.MACHINE_ID }}
@@ -47,6 +49,18 @@ jobs:
               chmod +x deploy/bootstrap-droplet.sh deploy/deploy.sh
               ./deploy/bootstrap-droplet.sh
             fi
+
+            mkdir -p /etc/shadowmode
+            echo '${{ secrets.DO_KAFKA_CA_CERT_B64 }}' | base64 -d > /etc/shadowmode/kafka-ca.crt
+            rm -f /etc/shadowmode/kafka.truststore.jks
+            keytool -importcert \
+              -noprompt \
+              -alias digitalocean-kafka-ca \
+              -file /etc/shadowmode/kafka-ca.crt \
+              -keystore /etc/shadowmode/kafka.truststore.jks \
+              -storepass "${{ secrets.DO_KAFKA_TRUSTSTORE_PASSWORD }}"
+            chmod 600 /etc/shadowmode/kafka-ca.crt /etc/shadowmode/kafka.truststore.jks
+
             cd /opt/shadowmode/app 2>/dev/null || cd /opt/shadowmode/bootstrap/ShadowModelLlm
             chmod +x deploy/deploy.sh
             ./deploy/deploy.sh
