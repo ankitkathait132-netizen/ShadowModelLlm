@@ -29,7 +29,7 @@ public class LlmShadowMismatchEntity {
     private String requestHash;
 
     @Lob
-    @Column(name = "request_payload_redacted")
+    @Column(name = "request_payload_redacted", columnDefinition = "LONGTEXT")
     private String requestPayloadRedacted;
 
     @Column(name = "primary_model")
@@ -55,19 +55,19 @@ public class LlmShadowMismatchEntity {
     private Long candidateLatencyMs;
 
     @Lob
-    @Column(name = "primary_raw_output")
+    @Column(name = "primary_raw_output", columnDefinition = "LONGTEXT")
     private String primaryRawOutput;
 
     @Lob
-    @Column(name = "candidate_raw_output")
+    @Column(name = "candidate_raw_output", columnDefinition = "LONGTEXT")
     private String candidateRawOutput;
 
     @Lob
-    @Column(name = "primary_json_output")
+    @Column(name = "primary_json_output", columnDefinition = "LONGTEXT")
     private String primaryJsonOutput;
 
     @Lob
-    @Column(name = "candidate_json_output")
+    @Column(name = "candidate_json_output", columnDefinition = "LONGTEXT")
     private String candidateJsonOutput;
 
     @Column(name = "diff_summary")
